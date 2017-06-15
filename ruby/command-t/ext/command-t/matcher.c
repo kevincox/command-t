@@ -139,6 +139,10 @@ static int continue_match(
 void do_match(thread_args_t *args, progress_t progress) {
     paths_t *paths = args->paths;
     
+    uint32_t required_chars = contained_chars(progress.needle, progress.needle_len);
+    if ((paths->contained_chars | required_chars) != paths->contained_chars)
+        return;
+    
     if (!continue_match(args, &progress, paths->path, paths->path_len)) {
         return;
     }

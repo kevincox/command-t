@@ -22,6 +22,7 @@ typedef struct paths_t {
     unsigned root: 1;
     unsigned leaf: 1;
     unsigned owned_path: 1;
+    uint32_t contained_chars;
     size_t subpaths_len;
     struct paths_t **subpaths;
 } paths_t;
@@ -29,6 +30,8 @@ typedef struct paths_t {
 extern VALUE CommandTPaths_from_array(VALUE, VALUE);
 extern VALUE CommandTPaths_from_fd(VALUE, VALUE, VALUE, VALUE);
 extern VALUE CommandTPaths_to_a(VALUE);
+
+extern uint32_t contained_chars(const char *str, size_t len);
 
 extern paths_t *CommandTPaths_get_paths(VALUE);
 extern VALUE paths_to_s(const paths_t *);

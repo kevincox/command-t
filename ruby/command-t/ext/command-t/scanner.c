@@ -39,6 +39,20 @@ static paths_t *paths_new_root(void) {
     return r;
 }
 
+uint32_t contained_chars(const char *s, size_t len) {
+    uint32_t r = 0;
+    while (len--) {
+        char c = *s++;
+        if ('A' <= c && c <= 'Z')
+            r |= 1 << (c - 'A');
+        if ('a' <= c && c <= 'z')
+            r |= 1 << (c - 'a');
+        if (32 <= c && c <= 37)
+            r |= 1 << (26 + c - 32);
+    }
+    return r;
+} 
+
 static void insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
     if (!(paths->subpaths_len & (paths->subpaths_len-1))) {
         // Reallocation needed.
@@ -61,11 +75,14 @@ static void insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
         .path_len = len,
         .owned_path = 1,
         .leaf = 1,
+        .contained_chars = contained_chars(path, len),
     };
     paths->subpaths[i] = new;
 }
 
 static void push(paths_t *paths, const char *path, size_t len) {
+    paths->contained_chars |= contained_chars(path, len);
+    
     if (paths->root) paths->len++;
     if (!len) {
         paths->leaf = 1;
@@ -93,6 +110,7 @@ static void push(paths_t *paths, const char *path, size_t len) {
                     .depth = paths->depth + 1,
                     .path = subpath->path,
                     .path_len = shared,
+                    .contained_chars = subpath->contained_chars,
                     .root = subpath->root,
                     .leaf = 1,
                     .owned_path = subpath->owned_path,
@@ -103,11 +121,13 @@ static void push(paths_t *paths, const char *path, size_t len) {
             } else {
                 // Create a fork
                 new = malloc(sizeof(paths_t));
+                uint32_t new_chars = contained_chars(path + shared, len - shared);
                 *new = (paths_t){
                     .parent = paths,
                     .depth = paths->depth + 1,
                     .path = subpath->path,
                     .path_len = shared,
+                    .contained_chars = subpath->contained_chars | new_chars,
                     .root = subpath->root,
                     .owned_path = subpath->owned_path,
                     .subpaths_len = 2,
@@ -119,6 +139,7 @@ static void push(paths_t *paths, const char *path, size_t len) {
                     .depth = paths->depth + 1,
                     .path = strndup(path + shared, len - shared),
                     .path_len = len - shared,
+                    .contained_chars = new_chars,
                     .leaf = 1,
                     .owned_path = 1,
                 };
@@ -134,6 +155,7 @@ static void push(paths_t *paths, const char *path, size_t len) {
             subpath->parent = new;
             subpath->path += shared;
             subpath->path_len -= shared;
+            subpath->contained_chars = contained_chars(subpath->path, subpath->path_len);
             subpath->owned_path = 0;
             subpath->root = 0;
             return;
