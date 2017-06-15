@@ -85,9 +85,6 @@ typedef struct {
     const char *needle;
     size_t needle_len;
     size_t haystack_len;
-    float score;
-    float factor;
-    char last;
 } progress_t;
 
 typedef struct {
@@ -97,15 +94,14 @@ typedef struct {
     paths_t *paths;
     match_t *matches;
     long matches_len;
-    const char *needle;
-    size_t needle_len;
+    VALUE needle;
     int always_show_dot_files;
     int never_show_dot_files;
     VALUE recurse;
     long needle_bitmask;
     
     heap_t *heap;
-    char haystack[PATHS_MAX_LEN];
+    char buf[PATHS_MAX_LEN];
 } thread_args_t;
 
 static int continue_match(
@@ -114,15 +110,17 @@ static int continue_match(
 {
     while (len--) {
         char c = *seg++;
-        progress->score -= 0.00001;
-        if (c == '/') progress->score -= 0.0001;
         
-        if (c == '.' && progress->last == '/') {
+        if (c == '.' && (
+            progress->haystack_len == 0 ||
+            args->buf[progress->haystack_len - 1] == '/')) {
             if (args->never_show_dot_files)
                 return 0;
             if (progress->needle[0] != '.' && !args->always_show_dot_files)
                 return 0;
         }
+        
+        args->buf[progress->haystack_len++] = c;
         
         if (progress->needle_len) {
             if (!args->case_sensitive) c = tolower(c);
@@ -130,18 +128,8 @@ static int continue_match(
             if (c == progress->needle[0]) {
                 progress->needle++;
                 progress->needle_len--;
-                
-                progress->score += progress->factor;
-                progress->factor = 1.0;
-            } else if (c == '/') progress->factor = 0.9;
-            else if (c == '-') progress->factor = 0.8;
-            else if (c == '_') progress->factor = 0.8;
-            else if (c == ' ') progress->factor = 0.8;
-            else if (!isalpha(c)) progress->factor = 0.7;
-            else progress->factor *= 0.5;
+            }
         }
-        
-        progress->last = c;
     }
     
     return 1;
@@ -154,29 +142,31 @@ void do_match(thread_args_t *args, progress_t progress) {
         return;
     }
     
-    fprintf(stderr, "LEN: %lu, NEEDLE: %s\n", progress.needle_len, progress.needle);
-    
     if (paths->leaf && !progress.needle_len) {
        match_t new_match = {
-            .score = progress.score,
             .path = paths,
+            .score = calculate_match(
+                args->buf,
+                progress.haystack_len,
+                args->needle,
+                args->case_sensitive,
+                args->always_show_dot_files,
+                args->never_show_dot_files,
+                args->recurse),
         };
 
-        if (args->heap) {
-            if (args->heap->count == args->limit) {
-                float score = ((match_t *)HEAP_PEEK(args->heap))->score;
-                if (new_match.score >= score) {
-                    match_t *buf = heap_extract(args->heap);
-                    *buf = new_match;
-                    heap_insert(args->heap, buf);
-                }
-            } else {
-                *args->matches = new_match;
-                heap_insert(args->heap, args->matches);
-                
-                args->matches++;
-                args->matches_len++;
+        if (args->heap && args->heap->count == args->limit) {
+            if (new_match.score >= ((match_t*)HEAP_PEEK(args->heap))->score) {
+                match_t *buf = heap_extract(args->heap);
+                *buf = new_match;
+                heap_insert(args->heap, buf);
             }
+        } else {
+            *args->matches = new_match;
+            if (args->heap) heap_insert(args->heap, args->matches);
+           
+            args->matches++;
+            args->matches_len++;
         }
     }
     
@@ -309,17 +299,13 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
             .progress = (progress_t){
                 .needle = needle_str,
                 .needle_len = needle_len,
-                .score = 0.0,
-                .factor = 1.0,
-                .last = '/',
             },
             .case_sensitive = case_sensitive == Qtrue,
             .paths = paths,
             .matches = &matches[limit*i],
             .matches_len = 0,
             .limit = use_heap ? limit : 0,
-            .needle = needle_str,
-            .needle_len = needle_len,
+            .needle = needle,
             .always_show_dot_files = always_show_dot_files == Qtrue,
             .never_show_dot_files = never_show_dot_files == Qtrue,
             .recurse = recurse,
@@ -364,17 +350,10 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     results = rb_ary_new();
     if (matches_len > limit) matches_len = limit;
     for (i = 0; i < matches_len; i++) {
-        fprintf(stderr, "Score: %f\n", matches[i].score);
-        rb_funcall(
-            results,
-            rb_intern("push"),
-            1,
-            paths_to_s(matches[i].path));
-        /* rb_funcall( */
-        /*     results, */
-        /*     rb_intern("push"), */
-        /*     1, */
-        /*     rb_sprintf("%f", matches[i].score)); */
+        VALUE path = paths_to_s(matches[i].path);
+        fprintf(stderr, "Score: %f, Path: %s\n", matches[i].score, RSTRING_PTR(path));
+        rb_funcall(results, rb_intern("push"), 1, path);
+        /*rb_funcall(results, rb_intern("push"), 1, rb_sprintf("%f", matches[i].score));*/
     }
 
     return results;

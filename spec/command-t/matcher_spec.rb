@@ -293,8 +293,8 @@ describe CommandT::Matcher do
       # doesn't score as favorably as matching the "app" in "app", the "ap" in
       # "api", and the "p" in "pagination".
       expect(matcher.sorted_matches_for('appappind')).to eq(%w[
-        app/assets/components/App/index.jsx
         app/views/api/docs/pagination/_index.md
+        app/assets/components/App/index.jsx
         app/assets/components/PrivacyPage/index.jsx
       ])
     end

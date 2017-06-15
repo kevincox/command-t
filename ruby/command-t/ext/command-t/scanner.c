@@ -299,9 +299,7 @@ static VALUE paths_to_s_internal(const paths_t *paths, size_t len) {
         return rb_str_buf_new(len);
     }
     
-    
     VALUE buf = paths_to_s_internal(paths->parent, len + paths->path_len);
-    fprintf(stderr, "Chunk %u: %.*s\n", paths->path_len, paths->path_len, paths->path);
     rb_str_buf_cat(buf, paths->path, paths->path_len);
     return buf;
 }

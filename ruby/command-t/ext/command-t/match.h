@@ -16,4 +16,13 @@ typedef struct {
     paths_t *path;
 } match_t;
 
+extern float calculate_match(
+    const char *haystack,
+    size_t haystack_len,
+    VALUE needle,
+    VALUE case_sensitive,
+    VALUE always_show_dot_files,
+    VALUE never_show_dot_files,
+    VALUE recurse);
+
 #endif
