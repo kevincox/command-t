@@ -4,6 +4,8 @@
 #ifndef SCANNER_H
 #define SCANNER_H
 
+#include <assert.h>
+
 #include <ruby.h>
 
 // The maximum length of any given path.
@@ -31,7 +33,23 @@ extern VALUE CommandTPaths_from_array(VALUE, VALUE);
 extern VALUE CommandTPaths_from_fd(VALUE, VALUE, VALUE, VALUE);
 extern VALUE CommandTPaths_to_a(VALUE);
 
-extern uint32_t contained_chars(const char *str, size_t len);
+static inline uint32_t hash_char(char c) {
+    if ('A' <= c && c <= 'Z')
+        return 1 << (c - 'A');
+    if ('a' <= c && c <= 'z')
+        return 1 << (c - 'a');
+    return 0;
+}
+
+static inline uint32_t contained_chars(const char *s, size_t len) {
+    uint32_t r = 0;
+    while (len--) {
+        char c = *s++;
+        r |= hash_char(c);
+    }
+    return r;
+} 
+
 
 extern paths_t *CommandTPaths_get_paths(VALUE);
 extern VALUE paths_to_s(const paths_t *);

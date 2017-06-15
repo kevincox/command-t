@@ -39,20 +39,6 @@ static paths_t *paths_new_root(void) {
     return r;
 }
 
-uint32_t contained_chars(const char *s, size_t len) {
-    uint32_t r = 0;
-    while (len--) {
-        char c = *s++;
-        if ('A' <= c && c <= 'Z')
-            r |= 1 << (c - 'A');
-        if ('a' <= c && c <= 'z')
-            r |= 1 << (c - 'a');
-        if (32 <= c && c <= 37)
-            r |= 1 << (26 + c - 32);
-    }
-    return r;
-} 
-
 static void insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
     if (!(paths->subpaths_len & (paths->subpaths_len-1))) {
         // Reallocation needed.
