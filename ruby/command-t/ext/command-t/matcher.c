@@ -1,9 +1,10 @@
 // Copyright 2010-present Greg Hurrell. All rights reserved.
 // Licensed under the terms of the BSD 2-clause license.
 
+#include <assert.h>
+#include <ctype.h>
 #include <stdlib.h>  /* for qsort() */
 #include <string.h>  /* for strncmp() */
-#include <assert.h>
 
 #include "match.h"
 #include "matcher.h"
@@ -150,13 +151,13 @@ void do_match(thread_args_t *args, progress_t progress) {
                 progress.haystack_len,
                 args->needle,
                 args->case_sensitive,
-                args->always_show_dot_files,
-                args->never_show_dot_files,
                 args->recurse),
         };
 
         if (args->heap && args->heap->count == args->limit) {
-            if (new_match.score >= ((match_t*)HEAP_PEEK(args->heap))->score) {
+            // Note: We can just compare the score because we are iterating in
+            // alphabetical order so earlier items are preferred for equal score.
+            if (new_match.score > ((match_t*)HEAP_PEEK(args->heap))->score) {
                 match_t *buf = heap_extract(args->heap);
                 *buf = new_match;
                 heap_insert(args->heap, buf);
@@ -345,15 +346,14 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     if (sort) {
         qsort(matches, matches_len, sizeof(match_t), cmp_score);
     }
-    fprintf(stderr, "Total %lu/%lu matches\n", matches_len, limit);
+    // fprintf(stderr, "Total %lu/%lu matches\n", matches_len, limit);
 
     results = rb_ary_new();
     if (matches_len > limit) matches_len = limit;
     for (i = 0; i < matches_len; i++) {
         VALUE path = paths_to_s(matches[i].path);
-        fprintf(stderr, "Score: %f, Path: %s\n", matches[i].score, RSTRING_PTR(path));
+        // fprintf(stderr, "Score: %f, Path: %s\n", matches[i].score, RSTRING_PTR(path));
         rb_funcall(results, rb_intern("push"), 1, path);
-        /*rb_funcall(results, rb_intern("push"), 1, rb_sprintf("%f", matches[i].score));*/
     }
 
     return results;

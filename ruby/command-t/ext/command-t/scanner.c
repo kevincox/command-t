@@ -39,7 +39,7 @@ static paths_t *paths_new_root(void) {
     return r;
 }
 
-static insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
+static void insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
     if (!(paths->subpaths_len & (paths->subpaths_len-1))) {
         // Reallocation needed.
         size_t capacity = paths->subpaths_len * 2;
@@ -63,15 +63,13 @@ static insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
         .leaf = 1,
     };
     paths->subpaths[i] = new;
-    
-    return paths;
 }
 
-static paths_t *push(paths_t *paths, const char *path, size_t len) {
+static void push(paths_t *paths, const char *path, size_t len) {
     if (paths->root) paths->len++;
     if (!len) {
         paths->leaf = 1;
-        return paths;
+        return;
     }
     
     size_t i = paths->subpaths_len;
@@ -83,8 +81,7 @@ static paths_t *push(paths_t *paths, const char *path, size_t len) {
             size_t shared = common_prefix(subpath, path, len);
             if (shared == subpath->path_len) {
                 // Goes inside the subpath.
-                paths->subpaths[i] = push(subpath, path + shared, len - shared);
-                return paths;
+                return push(subpath, path + shared, len - shared);
             }
             
             paths_t *new;
@@ -102,6 +99,7 @@ static paths_t *push(paths_t *paths, const char *path, size_t len) {
                     .subpaths_len = 1,
                     .subpaths = malloc(sizeof(paths_t*)),
                 };
+                new->subpaths[0] = subpath;
             } else {
                 // Create a fork
                 new = malloc(sizeof(paths_t));
@@ -119,7 +117,7 @@ static paths_t *push(paths_t *paths, const char *path, size_t len) {
                 *leaf = (paths_t){
                     .parent = new,
                     .depth = paths->depth + 1,
-                    .path = strndup(path + shared, len-shared),
+                    .path = strndup(path + shared, len - shared),
                     .path_len = len - shared,
                     .leaf = 1,
                     .owned_path = 1,
@@ -138,13 +136,13 @@ static paths_t *push(paths_t *paths, const char *path, size_t len) {
             subpath->path_len -= shared;
             subpath->owned_path = 0;
             subpath->root = 0;
-            return paths;
+            return;
         } else if (subpath->path[0] < path[0]) {
             return insert_at(paths, i+1, path, len);
         }
     }
     
-    return insert_at(paths, 0, path, len);
+    insert_at(paths, 0, path, len);
 }
 
 VALUE CommandTPaths_from_array(VALUE klass, VALUE source) {
@@ -155,7 +153,7 @@ VALUE CommandTPaths_from_array(VALUE klass, VALUE source) {
     long len = RARRAY_LEN(source);
     VALUE *source_array = RARRAY_PTR(source);
     while (len--) {
-        paths = push(paths, RSTRING_PTR(source_array[len]), RSTRING_LEN(source_array[len]));
+        push(paths, RSTRING_PTR(source_array[len]), RSTRING_LEN(source_array[len]));
     }
 
     return Data_Wrap_Struct(klass, NULL, paths_free, paths);
@@ -220,7 +218,7 @@ VALUE CommandTPaths_from_fd(VALUE klass, VALUE source, VALUE term, VALUE opt) {
                 }
             }
 
-            paths = push(paths, path, len);
+            push(paths, path, len);
 
             if (paths->len >= (size_t)max_files) {
                 goto done; /* break two levels */
