@@ -58,7 +58,7 @@ describe CommandT::Matcher do
       it 'ignores the space character' do
         paths = ['path_no_space', 'path with/space']
         matches = matcher(*paths).sorted_matches_for('path space', :ignore_spaces => true)
-        expect(matches.map { |m| m.to_s }).to eq(['path_no_space', 'path with/space'])
+        expect(matches.map { |m| m.to_s }).to eq(['path with/space', 'path_no_space'])
       end
     end
 
@@ -293,8 +293,8 @@ describe CommandT::Matcher do
       # doesn't score as favorably as matching the "app" in "app", the "ap" in
       # "api", and the "p" in "pagination".
       expect(matcher.sorted_matches_for('appappind')).to eq(%w[
-        app/views/api/docs/pagination/_index.md
         app/assets/components/App/index.jsx
+        app/views/api/docs/pagination/_index.md
         app/assets/components/PrivacyPage/index.jsx
       ])
     end

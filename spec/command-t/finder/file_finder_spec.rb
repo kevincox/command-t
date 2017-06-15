@@ -47,7 +47,7 @@ describe CommandT::Finder::FileFinder do
 
     it 'obeys the :limit option for empty search strings' do
       expect(@finder.sorted_matches_for('', :limit => 2)).
-        to eq(%w(bar/abc bar/xyz))
+        to eq(%w(baz bing))
     end
 
     it 'obeys the :limit option for non-empty search strings' do
