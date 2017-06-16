@@ -15,8 +15,6 @@ static void paths_free(paths_t *paths) {
     for (size_t i = 0; i < paths->subpaths_len; i++) {
         paths_free(paths->subpaths[i]);
     }
-    if (paths->owned_path)
-        free((void*)paths->path);
     free(paths);
 }
 
@@ -39,11 +37,14 @@ static paths_t *paths_new_root(void) {
     return r;
 }
 
+static int is_power_of_2(size_t n) { return !(n & (n - 1)); }
+
 static void insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
-    if (!(paths->subpaths_len & (paths->subpaths_len-1))) {
+    if (!paths->subpaths_len) paths->subpaths = malloc(2*sizeof(paths_t));
+    else if (paths->subpaths_len < 2) {}
+    else if (is_power_of_2(paths->subpaths_len)) {
         // Reallocation needed.
         size_t capacity = paths->subpaths_len * 2;
-        if (!capacity) capacity = 2;
         
         paths->subpaths = realloc(paths->subpaths, capacity*sizeof(paths_t*));
     }
@@ -57,13 +58,19 @@ static void insert_at(paths_t *paths, size_t i, const char *path, size_t len) {
     *new = (paths_t){
         .parent = paths,
         .depth = paths->depth + 1,
-        .path = strndup(path, len),
-        .path_len = len,
-        .owned_path = 1,
-        .leaf = 1,
         .contained_chars = contained_chars(path, len),
     };
     paths->subpaths[i] = new;
+    
+    if (len > PATHS_MAX_SEG) {
+        memcpy(new->path, path, PATHS_MAX_SEG);
+        new->path_len = PATHS_MAX_SEG;
+        insert_at(new, 0, path + PATHS_MAX_SEG, len - PATHS_MAX_SEG);
+    } else {
+        memcpy(new->path, path, len);
+        new->path_len = len;
+        new->leaf = 1;
+    }
 }
 
 static void push(paths_t *paths, const char *path, size_t len) {
@@ -87,62 +94,42 @@ static void push(paths_t *paths, const char *path, size_t len) {
                 return push(subpath, path + shared, len - shared);
             }
             
-            paths_t *new;
+            paths_t *new = malloc(sizeof(paths_t));
             if (shared == len) {
                 // Subpath should be inside this one.
-                new = malloc(sizeof(paths_t));
                 *new = (paths_t){
                     .parent = paths,
                     .depth = paths->depth + 1,
-                    .path = subpath->path,
                     .path_len = shared,
                     .contained_chars = subpath->contained_chars,
                     .root = subpath->root,
                     .leaf = 1,
-                    .owned_path = subpath->owned_path,
                     .subpaths_len = 1,
-                    .subpaths = malloc(sizeof(paths_t*)),
+                    .subpaths = malloc(2*sizeof(paths_t*)),
                 };
                 new->subpaths[0] = subpath;
             } else {
                 // Create a fork
-                new = malloc(sizeof(paths_t));
                 uint32_t new_chars = contained_chars(path + shared, len - shared);
                 *new = (paths_t){
                     .parent = paths,
                     .depth = paths->depth + 1,
-                    .path = subpath->path,
                     .path_len = shared,
                     .contained_chars = subpath->contained_chars | new_chars,
                     .root = subpath->root,
-                    .owned_path = subpath->owned_path,
-                    .subpaths_len = 2,
+                    .subpaths_len = 1,
                     .subpaths = malloc(2*sizeof(paths_t*)),
                 };
-                paths_t *leaf = malloc(sizeof(paths_t));
-                *leaf = (paths_t){
-                    .parent = new,
-                    .depth = paths->depth + 1,
-                    .path = strndup(path + shared, len - shared),
-                    .path_len = len - shared,
-                    .contained_chars = new_chars,
-                    .leaf = 1,
-                    .owned_path = 1,
-                };
-                if (subpath->path[shared] < path[shared]) {
-                    new->subpaths[0] = subpath;
-                    new->subpaths[1] = leaf;
-                } else {
-                    new->subpaths[0] = leaf;
-                    new->subpaths[1] = subpath;
-                }
+                new->subpaths[0] = subpath;
+                
+                int index = subpath->path[shared] < path[shared]? 1 : 0;
+                insert_at(new, index, path + shared, len - shared);
             }
+            memcpy(new->path, subpath->path, subpath->path_len);
             paths->subpaths[i] = new;
             subpath->parent = new;
-            subpath->path += shared;
+            memmove(subpath->path, subpath->path + shared, subpath->path_len - shared);
             subpath->path_len -= shared;
-            subpath->contained_chars = contained_chars(subpath->path, subpath->path_len);
-            subpath->owned_path = 0;
             subpath->root = 0;
             return;
         } else if (subpath->path[0] < path[0]) {
@@ -160,10 +147,10 @@ VALUE CommandTPaths_from_array(VALUE klass, VALUE source) {
 
     long len = RARRAY_LEN(source);
     VALUE *source_array = RARRAY_PTR(source);
-    while (len--) {
-        push(paths, RSTRING_PTR(source_array[len]), RSTRING_LEN(source_array[len]));
+    for (int i = 0; i < len; ++i) {
+        push(paths, RSTRING_PTR(source_array[i]), RSTRING_LEN(source_array[i]));
     }
-
+    
     return Data_Wrap_Struct(klass, NULL, paths_free, paths);
 }
 
@@ -287,17 +274,18 @@ VALUE CommandTPaths_to_a(VALUE self) {
 
 static void indent(size_t depth) { while(depth--) fprintf(stderr, "| "); }
 
-static void paths_dump_depth(const paths_t *paths, size_t depth) {
-    indent(depth); fprintf(stderr, "PATHPATHPATH: %.*s\n", paths->path_len, paths->path);
-    indent(depth); fprintf(stderr, "root: %u, leaf: %u, owned: %u\n",
-        paths->root, paths->leaf, paths->owned_path);
+static void paths_dump_depth(const paths_t *paths, size_t depth, uint32_t lastmask) {
+    indent(depth); fprintf(stderr, "path[%u] %.*s\n", paths->path_len, paths->path_len, paths->path);
+    indent(depth); fprintf(stderr, "mask: %#04x (+%#04x -%#04x)\n", paths->contained_chars,
+        paths->contained_chars & ~lastmask, ~paths->contained_chars & lastmask);
+    indent(depth); fprintf(stderr, "root: %u, leaf: %u\n", paths->root, paths->leaf);
     indent(depth); fprintf(stderr, "subpaths: %ld\n", paths->subpaths_len);
     for (size_t i = 0; i < paths->subpaths_len; ++i)
-        paths_dump_depth(paths->subpaths[i], depth + 1);
+        paths_dump_depth(paths->subpaths[i], depth + 1, paths->contained_chars);
 }
 
 void paths_dump(const paths_t *paths) {
-    paths_dump_depth(paths, 0);
+    paths_dump_depth(paths, 0, ~0);
 }
 
 static VALUE paths_to_s_internal(const paths_t *paths, size_t len) {

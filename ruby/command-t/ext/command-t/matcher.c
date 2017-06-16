@@ -84,6 +84,7 @@ VALUE CommandTMatcher_initialize(int argc, VALUE *argv, VALUE self)
 
 typedef struct {
     const char *needle;
+    uint32_t *needle_masks;
     size_t needle_len;
     size_t haystack_len;
 } progress_t;
@@ -99,7 +100,6 @@ typedef struct {
     int always_show_dot_files;
     int never_show_dot_files;
     VALUE recurse;
-    long needle_bitmask;
     
     heap_t *heap;
     char buf[PATHS_MAX_LEN];
@@ -139,8 +139,7 @@ static int continue_match(
 void do_match(thread_args_t *args, progress_t progress) {
     paths_t *paths = args->paths;
     
-    uint32_t required_chars = contained_chars(progress.needle, progress.needle_len);
-    if ((paths->contained_chars | required_chars) != paths->contained_chars)
+    if ((paths->contained_chars | progress.needle_masks[0]) != paths->contained_chars)
         return;
     
     if (!continue_match(args, &progress, paths->path, paths->path_len)) {
@@ -226,7 +225,6 @@ long calculate_bitmask(VALUE string) {
 VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
 {
     size_t i, limit, thread_count, err;
-    long needle_bitmask;
     int use_heap;
     int sort;
     size_t matches_len = 0;
@@ -276,6 +274,13 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     const char *needle_str = RSTRING_PTR(needle);
     size_t needle_len = RSTRING_LEN(needle);
     
+    uint32_t needle_masks[needle_len];
+    uint32_t mask_accum = 0;
+    i = needle_len;
+    while (i--) {
+        needle_masks[i] = mask_accum |= hash_char(needle_str[i]);
+    }
+    
     // Get unsorted matches.
     scanner = rb_iv_get(self, "@scanner");
     paths_obj = rb_funcall(scanner, rb_intern("c_paths"), 0);
@@ -286,8 +291,6 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     
     if (!limit) limit = paths->len;
     
-    needle_bitmask = calculate_bitmask(needle);
-
     thread_count = NIL_P(threads_option) ? 1 : NUM2LONG(threads_option);
 
 #ifdef HAVE_PTHREAD_H
@@ -304,6 +307,7 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
             .progress = (progress_t){
                 .needle = needle_str,
                 .needle_len = needle_len,
+                .needle_masks = needle_masks,
             },
             .case_sensitive = case_sensitive == Qtrue,
             .paths = paths,
@@ -314,7 +318,6 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
             .always_show_dot_files = always_show_dot_files == Qtrue,
             .never_show_dot_files = never_show_dot_files == Qtrue,
             .recurse = recurse,
-            .needle_bitmask = needle_bitmask,
         };
 
 #ifdef HAVE_PTHREAD_H

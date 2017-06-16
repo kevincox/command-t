@@ -5,11 +5,9 @@
 #define SCANNER_H
 
 #include <assert.h>
+#include <stddef.h>
 
 #include <ruby.h>
-
-// The maximum length of any given path.
-#define PATHS_MAX_LEN 4096
 
 typedef struct paths_t {
     union {
@@ -19,15 +17,19 @@ typedef struct paths_t {
         struct paths_t *parent;
     };
     size_t depth;
-    const char *path;
-    unsigned path_len;
-    unsigned root: 1;
-    unsigned leaf: 1;
-    unsigned owned_path: 1;
-    uint32_t contained_chars;
-    size_t subpaths_len;
+    
     struct paths_t **subpaths;
+    size_t subpaths_len;
+    uint32_t contained_chars;
+    unsigned path_len;
+    uint8_t root: 1;
+    uint8_t leaf: 1;
+    char path[32]; // At least, struct padding is also used.
 } paths_t;
+
+// The maximum length of any given path.
+#define PATHS_MAX_LEN 4096
+static const size_t PATHS_MAX_SEG = sizeof(paths_t) - offsetof(paths_t, path);
 
 extern VALUE CommandTPaths_from_array(VALUE, VALUE);
 extern VALUE CommandTPaths_from_fd(VALUE, VALUE, VALUE, VALUE);
@@ -48,7 +50,7 @@ static inline uint32_t contained_chars(const char *s, size_t len) {
         r |= hash_char(c);
     }
     return r;
-} 
+}
 
 
 extern paths_t *CommandTPaths_get_paths(VALUE);
