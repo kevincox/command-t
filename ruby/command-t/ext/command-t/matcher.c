@@ -40,6 +40,9 @@ int cmp_alpha(const void *a, const void *b)
     paths_t *a_path = a_match->path;
     paths_t *b_path = b_match->path;
     
+    if (a_path->root) return -1;
+    if (b_path->root) return 1;
+    
     return cmp_path(a_path, b_path);
 }
 
@@ -93,7 +96,8 @@ typedef struct {
     progress_t progress;
     long case_sensitive;
     long limit;
-    paths_t *paths;
+    paths_t **paths;
+    size_t paths_len;
     match_t *matches;
     long matches_len;
     VALUE needle;
@@ -137,9 +141,7 @@ static int continue_match(
     return 1;
 }
 
-void do_match(thread_args_t *args, progress_t progress) {
-    paths_t *paths = args->paths;
-    
+void do_match(thread_args_t *args, paths_t *paths, progress_t progress) {
     if (progress.needle_len && *progress.needle_mask & ~paths->contained_chars) {
         return;
     }
@@ -177,8 +179,7 @@ void do_match(thread_args_t *args, progress_t progress) {
     }
     
     for (size_t i = 0; i < paths->subpaths_len; i++) {
-        args->paths = paths->subpaths[i];
-        do_match(args, progress);
+        do_match(args, paths->subpaths[i], progress);
     }
 }
 
@@ -195,7 +196,9 @@ void *match_thread(void *thread_args)
         args->heap = heap_new(args->limit, cmp_score);
     }
 
-    do_match(args, args->progress);
+    for (size_t i = 0; i < args->paths_len; ++i) {
+        do_match(args, args->paths[i], args->progress);
+    }
     
     if (args->heap) {
         args->matches_len = args->heap->count;
@@ -300,6 +303,8 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
 #define THREAD_THRESHOLD 1000 /* avoid the overhead of threading when search space is small */
     if (paths->len < THREAD_THRESHOLD) {
         thread_count = 1;
+    } else if (paths->subpaths_len < thread_count) {
+        thread_count = paths->subpaths_len;
     }
     pthread_t threads[thread_count];
     match_t matches[limit*thread_count];
@@ -313,7 +318,8 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
                 .needle_mask = needle_masks,
             },
             .case_sensitive = case_sensitive == Qtrue,
-            .paths = paths,
+            .paths = paths->subpaths + i*paths->subpaths_len/thread_count,
+            .paths_len = paths->subpaths_len/thread_count,
             .matches = &matches[limit*i],
             .matches_len = 0,
             .limit = use_heap ? limit : 0,
@@ -326,6 +332,10 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
 #ifdef HAVE_PTHREAD_H
         if (i == thread_count - 1) {
 #endif
+            // Handle "uneven" paths.
+            thread_args[i].paths_len =
+                paths->subpaths_len - (thread_args[i].paths - paths->subpaths);
+
             // For the last "worker", we'll just use the main thread.
             match_thread(&thread_args[i]);
 #ifdef HAVE_PTHREAD_H
@@ -350,6 +360,9 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
             &matches[matches_len], thread_args[i].matches,
             thread_args[i].matches_len * sizeof(match_t));
         matches_len += thread_args[i].matches_len;
+    }
+    if (paths->leaf && needle_len == 0) {
+        matches[matches_len++] = (match_t){.score = 1.0, .path = paths};
     }
 #endif
 
