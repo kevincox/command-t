@@ -84,7 +84,7 @@ VALUE CommandTMatcher_initialize(int argc, VALUE *argv, VALUE self)
 
 typedef struct {
     const char *needle;
-    uint32_t *needle_masks;
+    uint32_t *needle_mask;
     size_t needle_len;
     size_t haystack_len;
 } progress_t;
@@ -129,6 +129,7 @@ static int continue_match(
             if (c == progress->needle[0]) {
                 progress->needle++;
                 progress->needle_len--;
+                progress->needle_mask++;
             }
         }
     }
@@ -139,8 +140,9 @@ static int continue_match(
 void do_match(thread_args_t *args, progress_t progress) {
     paths_t *paths = args->paths;
     
-    if ((paths->contained_chars | progress.needle_masks[0]) != paths->contained_chars)
+    if (progress.needle_len && *progress.needle_mask & ~paths->contained_chars) {
         return;
+    }
     
     if (!continue_match(args, &progress, paths->path, paths->path_len)) {
         return;
@@ -274,11 +276,12 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     const char *needle_str = RSTRING_PTR(needle);
     size_t needle_len = RSTRING_LEN(needle);
     
-    uint32_t needle_masks[needle_len];
+    uint32_t needle_masks[needle_len + 1];
     uint32_t mask_accum = 0;
     i = needle_len;
+    needle_masks[i] = 0;
     while (i--) {
-        needle_masks[i] = mask_accum |= hash_char(needle_str[i]);
+        needle_masks[i] = needle_masks[i+1] | hash_char(needle_str[i]);
     }
     
     // Get unsorted matches.
@@ -307,7 +310,7 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
             .progress = (progress_t){
                 .needle = needle_str,
                 .needle_len = needle_len,
-                .needle_masks = needle_masks,
+                .needle_mask = needle_masks,
             },
             .case_sensitive = case_sensitive == Qtrue,
             .paths = paths,
