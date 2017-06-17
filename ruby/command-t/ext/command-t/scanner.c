@@ -194,10 +194,10 @@ VALUE CommandTPaths_from_fd(VALUE klass, VALUE source, VALUE term, VALUE opt) {
     char buffer[PATHS_MAX_LEN];
     char *start = buffer;
     char *end = buffer;
-    ssize_t count = 1;
+    size_t count;
     long match_count = 0;
-    while ((count = read(fd, start, end - start + sizeof(buffer))) != 0) {
-        if (count < 0) {
+    while ((count = read(fd, end, sizeof(buffer) - (end - start))) != 0) {
+        if (count <= 0) {
             paths_free(paths);
             rb_raise(rb_eRuntimeError, "read returned error %s", strerror(errno));
         }
@@ -211,6 +211,12 @@ VALUE CommandTPaths_from_fd(VALUE klass, VALUE source, VALUE term, VALUE opt) {
 
             char *path = start + drop;
             int len = next_end - start - drop;
+            
+            if (next_end-start < drop)
+                rb_raise(rb_eRuntimeError,
+                    "Terminator is less then drop away (%lu - %lu) '%.*s'.",
+                    next_end-start, drop,
+                    next_end-start, start);
 
             start = next_end + 1;
 
