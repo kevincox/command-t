@@ -17,9 +17,10 @@ typedef struct paths_t {
     
     struct paths_t **subpaths;
     size_t subpaths_len;
-    uint32_t contained_chars;
+    
     char *path;
     unsigned path_len;
+    uint32_t contained_chars;
     uint8_t leaf: 1;
     uint8_t owned_path: 1;
 } paths_t;
@@ -43,7 +44,7 @@ static inline uint32_t contained_chars(const char *s, size_t len) {
         r |= hash_char(c);
     }
     return r;
-} 
+}
 
 
 extern paths_t *CommandTPaths_get_paths(VALUE);

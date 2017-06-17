@@ -139,7 +139,6 @@ static void push(paths_t *paths, const char *path, size_t len) {
             subpath->parent = new;
             subpath->path += shared;
             subpath->path_len -= shared;
-            subpath->contained_chars = contained_chars(subpath->path, subpath->path_len);
             subpath->owned_path = 0;
             return;
         } else if (subpath->path[0] < path[0]) {
@@ -157,8 +156,8 @@ VALUE CommandTPaths_from_array(VALUE klass, VALUE source) {
 
     long len = RARRAY_LEN(source);
     VALUE *source_array = RARRAY_PTR(source);
-    while (len--) {
-        push(paths, RSTRING_PTR(source_array[len]), RSTRING_LEN(source_array[len]));
+    for (long i = 0; i < len; ++i) {
+        push(paths, RSTRING_PTR(source_array[i]), RSTRING_LEN(source_array[i]));
     }
 
     return Data_Wrap_Struct(klass, NULL, paths_free, paths);
@@ -216,7 +215,7 @@ VALUE CommandTPaths_from_fd(VALUE klass, VALUE source, VALUE term, VALUE opt) {
                 rb_raise(rb_eRuntimeError,
                     "Terminator is less then drop away (%lu - %lu) '%.*s'.",
                     next_end-start, drop,
-                    next_end-start, start);
+                    (int)(next_end-start), start);
 
             start = next_end + 1;
 
