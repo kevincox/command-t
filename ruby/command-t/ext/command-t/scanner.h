@@ -24,7 +24,7 @@ typedef struct paths_t {
     unsigned path_len;
     uint8_t root: 1;
     uint8_t leaf: 1;
-    char path[32]; // At least, struct padding is also used.
+    char path[4]; // At least, struct padding is also used.
 } paths_t;
 
 // The maximum length of any given path.
