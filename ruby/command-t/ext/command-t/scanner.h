@@ -12,21 +12,16 @@
 #define PATHS_MAX_LEN 4096
 
 typedef struct paths_t {
-    union {
-        // If flags & MATCHES_FLAG_ROOT. Contains the number of elements contained.
-        size_t len;
-        // The previous element.
-        struct paths_t *parent;
-    };
-    size_t depth;
-    const char *path;
-    unsigned path_len;
-    unsigned root: 1;
-    unsigned leaf: 1;
-    unsigned owned_path: 1;
-    uint32_t contained_chars;
-    size_t subpaths_len;
+    struct paths_t *parent;
+    size_t length;
+    
     struct paths_t **subpaths;
+    size_t subpaths_len;
+    uint32_t contained_chars;
+    char *path;
+    unsigned path_len;
+    uint8_t leaf: 1;
+    uint8_t owned_path: 1;
 } paths_t;
 
 extern VALUE CommandTPaths_from_array(VALUE, VALUE);
