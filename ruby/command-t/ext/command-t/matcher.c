@@ -21,9 +21,9 @@
 static int cmp_path(const paths_t *a, const paths_t *b) {
     if (a->length > b->length) return cmp_path(a, b->parent);
     if (a->length < b->length) return cmp_path(a->parent, b);
-    
+
     if (a->parent != b->parent) return cmp_path(a->parent, b->parent);
-    
+
     size_t min_len = a->path_len < b->path_len? a->path_len : b->path_len;
     int r = strncmp(a->path, b->path, min_len);
     if (r) return r;
@@ -35,13 +35,13 @@ int cmp_alpha(const void *a, const void *b)
 {
     match_t *a_match = (match_t *)a;
     match_t *b_match = (match_t *)b;
-    
+
     paths_t *a_path = a_match->path;
     paths_t *b_path = b_match->path;
-    
+
     if (!a_path->parent) return -1;
     if (!b_path->parent) return 1;
-    
+
     return cmp_path(a_path, b_path);
 }
 
@@ -103,18 +103,28 @@ typedef struct {
     int always_show_dot_files;
     int never_show_dot_files;
     VALUE recurse;
-    
+
     heap_t *heap;
     char buf[PATHS_MAX_LEN];
 } thread_args_t;
 
-static int continue_match(
-    thread_args_t *args, progress_t *progress,
-    const char *seg, size_t len)
+/** Update match progress.
+ *
+ * Advance the match progress based on the passed segment. If
+ * progress->needle_len is zero when this function returns the current path and
+ * all subpaths "match". However note that subpaths may be hidden.
+ *
+ * @return true if any subpath could match.
+ */
+static int continue_match(thread_args_t *args, progress_t *progress, paths_t *path)
 {
-    while (len--) {
-        char c = *seg++;
-        
+    if (*progress->needle_mask & ~path->contained_mask)
+        return 0;
+
+    for (size_t i = 0; i < path->path_len; ++i) {
+        char c = path->path[i];
+
+        // Hidden file?
         if (c == '.' && (
             progress->haystack_len == 0 ||
             args->buf[progress->haystack_len - 1] == '/')) {
@@ -123,36 +133,30 @@ static int continue_match(
             if (progress->needle[0] != '.' && !args->always_show_dot_files)
                 return 0;
         }
-        
+
+        // Build up the path in the buffer.
         args->buf[progress->haystack_len++] = c;
-        
+
+        // Update match progress.
         if (progress->needle_len) {
             if (!args->case_sensitive) c = tolower(c);
-            
+
             if (c == progress->needle[0]) {
                 progress->needle++;
                 progress->needle_len--;
                 progress->needle_mask++;
+
+                if (*progress->needle_mask & ~path->contained_mask)
+                    return 0;
             }
         }
     }
-    
+
     return 1;
 }
 
 void do_match(thread_args_t *args, paths_t *paths, progress_t progress) {
-    if (*progress.needle_mask & ~paths->contained_chars) {
-        if (args->skip > paths->length) args->skip -= paths->length;
-        else {
-            size_t extra = paths->length - args->skip;
-            args->skip = 0;
-            if (extra < args->scan) args->scan -= extra;
-            else args->scan = 0;
-        }
-        return;
-    }
-    
-    if (!continue_match(args, &progress, paths->path, paths->path_len)) {
+    if (!continue_match(args, &progress, paths)) {
         if (args->skip > paths->length) args->skip -= paths->length;
         else {
             size_t extra = paths->length - args->skip;
@@ -161,7 +165,7 @@ void do_match(thread_args_t *args, paths_t *paths, progress_t progress) {
         }
         return;
     }
-    
+
     if (!args->skip && paths->leaf && !progress.needle_len) {
        match_t new_match = {
             .path = paths,
@@ -184,13 +188,13 @@ void do_match(thread_args_t *args, paths_t *paths, progress_t progress) {
         } else {
             *args->matches = new_match;
             if (args->heap) heap_insert(args->heap, args->matches);
-           
+
             args->matches++;
         }
     }
     if (paths->leaf && !args->skip && args->scan) if (!--args->scan) return;
     if (paths->leaf && args->skip) args->skip -= 1;
-    
+
     for (size_t i = 0; i < paths->subpaths_len; i++) {
         paths_t *next = paths->subpaths[i];
         if (args->skip >= next->length) {
@@ -205,7 +209,7 @@ void do_match(thread_args_t *args, paths_t *paths, progress_t progress) {
 void *match_thread(void *thread_args)
 {
     thread_args_t *args = (thread_args_t *)thread_args;
-    
+
     match_t *orig_matches = args->matches;
 
     if (args->limit) {
@@ -213,16 +217,16 @@ void *match_thread(void *thread_args)
     }
 
     do_match(args, args->paths, args->progress);
-    
+
     size_t matches;
     if (args->heap) {
         matches = args->heap->count;
     } else {
         matches = args->matches - orig_matches;
     }
-    
+
     heap_free(args->heap);
-    
+
     return (void*)matches;
 }
 
@@ -261,7 +265,7 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     always_show_dot_files = rb_iv_get(self, "@always_show_dot_files");
     never_show_dot_files = rb_iv_get(self, "@never_show_dot_files");
     recurse = CommandT_option_from_hash("recurse", options);
-    
+
     limit = NIL_P(limit_option) ? 15 : NUM2LONG(limit_option);
     sort = NIL_P(sort_option) || sort_option == Qtrue;
 
@@ -271,17 +275,17 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
 
     if (ignore_spaces == Qtrue)
         needle = rb_funcall(needle, rb_intern("delete"), 1, rb_str_new2(" "));
-    
+
     const char *needle_str = RSTRING_PTR(needle);
     size_t needle_len = RSTRING_LEN(needle);
-    
+
     uint32_t needle_masks[needle_len + 1];
     i = needle_len;
     needle_masks[i] = 0;
     while (i--) {
         needle_masks[i] = needle_masks[i+1] | hash_char(needle_str[i]);
     }
-    
+
     // Get unsorted matches.
     scanner = rb_iv_get(self, "@scanner");
     paths_obj = rb_funcall(scanner, rb_intern("c_paths"), 0);
@@ -289,11 +293,11 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
     if (paths == NULL) {
         rb_raise(rb_eArgError, "null matches");
     }
-    
+
     if (!limit) limit = paths->length;
-    
+
     size_t handled_paths = 0;
-    
+
 #ifdef HAVE_PTHREAD_H
     thread_count = NIL_P(threads_option) ? 0 : NUM2LONG(threads_option);
     size_t paths_per_thread = 10000;
@@ -327,14 +331,14 @@ VALUE CommandTMatcher_sorted_matches_for(int argc, VALUE *argv, VALUE self)
             .scan = paths_per_thread,
         };
         handled_paths += paths_per_thread;
-        
+
         err = pthread_create(&threads[i], NULL, match_thread, (void *)&thread_args[i]);
         if (err != 0) {
             rb_raise(rb_eSystemCallError, "pthread_create() failure (%d)", (int)err);
         }
     }
 #endif
-    
+
     thread_args_t main_thread_arg = {
         .progress = (progress_t){
             .needle = needle_str,

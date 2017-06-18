@@ -21,7 +21,7 @@ typedef struct {
     float      *memo;                  // Memoization.
 } matchinfo_t;
 
-float recursive_match(
+static float recursive_match(
     matchinfo_t *m,    // Sharable meta-data.
     long haystack_idx, // Where in the path string to start.
     long needle_idx,   // Where in the needle string to start.
@@ -128,7 +128,7 @@ float calculate_match(
 
     // Special case for zero-length search string.
     if (m.needle_len == 0) return score;
-    
+
     long haystack_limit;
     long memo_size;
     long needle_idx;
@@ -196,6 +196,6 @@ float calculate_match(
         fprintf(stderr, "Final score: %f\n\n", score);
 #endif
     }
-    
+
     return score;
 }
