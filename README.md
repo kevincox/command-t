@@ -1,25 +1,9 @@
-<p align="center">
-<img src="https://raw.githubusercontent.com/wincent/command-t/media/command-t-small.jpg" />
-<img src="https://raw.githubusercontent.com/wincent/command-t/media/command-t.gif" />
-</p>
-
 # Command-T
 
-Command-T is a Vim plug-in that provides an extremely fast "fuzzy" mechanism for:
+## This repo.
 
-- Opening files and buffers
-- Jumping to tags and help
-- Running commands, or previous searches and commands
+**NOTE:** This is a set of patches off of https://github.com/wincent/command-t but it doesn't appear that upstream is interested in the patches so I am leaving them here. Don't expect a high level of maintenance but you are free to use this repo.
 
-with a minimal number of keystrokes.
+## Added Features
 
-Files are selected by typing characters that appear in their paths, and are ranked by an algorithm which knows that characters that appear in certain locations (for example, immediately after a path separator) should be given more weight.
-
-Files can be opened in the current window, or in splits or tabs. Many configuration options are provided.
-
-Speed is the primary design goal, along with providing high-quality, intuitive match ordering. The hand-crafted matching algorithm, implemented in low-level C and combined with parallelized search, input debouncing, integration with Watchman and many other optimizations, mean that Command-T is the fastest fuzzy file finder bar none.
-
----
-
-For more information, see [the
-documentation](https://github.com/wincent/command-t/blob/master/doc/command-t.txt).
+Most of the added features are for working in a large repository everyday. I have added an option to load paths using any command (or shell pipeline) so that you can control exactly what files to list as well as allowing you to use the fastest tool you have available. I have also improved performance considerably (both loading and searching).
